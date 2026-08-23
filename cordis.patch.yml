@@ -1,0 +1,5 @@
+# dsh-turn-guard bundle patch
+# 插入 host 插件行：监听 session/event 的 step 边界，实现单步超时。
+- insert:
+    - id: dsh-turn-guard
+      name: dsh-turn-guard
