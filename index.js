@@ -2,8 +2,9 @@
  * dsh-turn-guard — turn 级单步超时插件（防模型退化死循环）
  *
  * 职责：监听 session/event 的 step 边界，若 agent 携带
- *   agent.__pluginConfig.turnGuard.stepMs（各入口插件挂载，见方案 v0.2），
- *   则每步从 step/start 起计时，超过 stepMs 强制 agent.cancel({kind:'hook'})。
+ *   agent.__pluginConfig.turnGuard.stepSec（各入口插件挂载，配置单位：秒），
+ *   则每步从 step/start 起计时，超过 stepSec 强制 agent.cancel({kind:'hook'})。
+ *   底层 setTimeout 需要毫秒，启动计时器时转换：stepSec * 1000。
  *
  * 设计要点（对应 docs/turn-guard-plan.md v0.2）：
  *   - 零前缀映射：不感知会话类型，只读 agent 上挂的配置；无配置不干预（等同 web）。
@@ -55,21 +56,23 @@ export function apply(ctx) {
     const sessionId = session?.id;
 
     if (event.type === "step/start") {
-      // 读 agent 上挂的配置（各入口插件挂载 __pluginConfig.turnGuard.stepMs）。
+      // 读 agent 上挂的配置（各入口插件挂载 __pluginConfig.turnGuard.stepSec，单位秒）。
       const agent = agents?.get(sessionId);
-      const ms = agent?.__pluginConfig?.turnGuard?.stepMs;
-      if (!ms || !Number.isFinite(ms) || ms <= 0) return; // 无配置不干预
+      const sec = agent?.__pluginConfig?.turnGuard?.stepSec;
+      if (!sec || !Number.isFinite(sec) || sec <= 0) return; // 无配置不干预
       if (timers.has(sessionId)) clearTimer(sessionId); // 防御：理论上同 step 不会重复
+      // 底层 setTimeout 单位毫秒：配置秒 → 毫秒转换在这里做。
+      const timeoutMs = sec * 1000;
       const timer = setTimeout(() => {
         if (!timers.has(sessionId)) return; // 已被 end 清理
         timers.delete(sessionId);
-        log.warn(`session ${sessionId}: step 超时 ${ms}ms，cancel 当前 turn`);
+        log.warn(`session ${sessionId}: step 超时 ${sec}s，cancel 当前 turn`);
         try {
-          agent.cancel({ kind: "hook", reason: `step timeout (${ms}ms)` });
+          agent.cancel({ kind: "hook", reason: `step timeout (${sec}s)` });
         } catch (e) {
           log.error(`session ${sessionId}: cancel 失败 ${e instanceof Error ? e.message : e}`);
         }
-      }, ms);
+      }, timeoutMs);
       timers.set(sessionId, timer);
       return;
     }
@@ -85,5 +88,5 @@ export function apply(ctx) {
     timers.clear();
   });
 
-  log.info(`已加载（零前缀映射，读 agent.__pluginConfig.turnGuard.stepMs）`);
+  log.info(`已加载（零前缀映射，读 agent.__pluginConfig.turnGuard.stepSec，单位秒）`);
 }
