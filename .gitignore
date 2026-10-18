@@ -1,2 +1,9 @@
 node_modules/
 *.log
+# ── 统一补全（2026-10-18）──
+.DS_Store
+*.bak-*
+.backup-*/
+*.orig
+*.tmp
+*.swp
