@@ -135,3 +135,22 @@ dsh plugin --profile web add /Users/fatatalia/project/dsh-turn-guard
 - 方案文档（设计稿 + 实现状态）：`docs/turn-guard-plan.md`（在代码东工作区）
 - 前置修复（入口层兜底）：dsh-webhook deliver 工具调用轮次上限（15 轮）
 - 事故记录：webhook 模型循环事故（2026-08-21）
+
+## 为什么没有空回复重试（2026-11-15 移除）
+
+本插件曾经兼职第二件事：`turn/end` 时本轮没有可见正文就 `followup` 重试。
+**问题是真的**（模型退化时只思考不说话，turn 以 `reason.kind="completed"` 正常结束，用户侧看到的就是「没反应」），
+但**归属放错了** —— 本插件是通用守卫，不知道消息要投到哪、发不发得出去。
+
+实测暴露的缺口（2026-11-15 16:33）：重试确实产出了 1979 字正文，用户却一个字没收到。
+
+```
+imessage._deliver → await whenIdle() → turn/end 一响立即返回 → streamPoller 清掉 → 收工
+       （300ms 后）turn-guard.setTimeout → followup → 新 turn 跑起来，但已经没有任何监听者
+```
+
+根因是「重试」该由**投递方**负责：只有单向通道（iMessage）才需要兜底，
+Web 的空回复本来就能被直接看见。
+
+⇒ 重试逻辑现在在 `dsh-imessage` 的 `_deliver` 内部循环里（`emptyRetryMax` / `emptyRetryPrompt` / `emptyFallbackPrompt`）。
+本插件只剩**单步超时**一件事。
